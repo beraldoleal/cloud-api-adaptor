@@ -6,6 +6,7 @@ require (
 	cloud.google.com/go/compute v1.23.3
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.11.1
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.6.0
+	cloud.google.com/go/compute v1.23.3
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4 v4.2.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v2 v2.2.1
 	github.com/IBM-Cloud/power-go-client v1.2.3
@@ -36,6 +37,7 @@ require (
 require (
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.8.0 // indirect
+	cloud.google.com/go/compute/metadata v0.2.3 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork v1.1.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.1.1 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.2.2 // indirect
