@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.9-labs
+# syntax=docker/dockerfile:1.10-labs
 # Copyright Confidential Containers Contributors
 #
 # SPDX-License-Identifier: Apache-2.0
