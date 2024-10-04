@@ -24,65 +24,30 @@ import (
 
 // GKECluster implements the basic GKE Cluster client operations.
 type GKECluster struct {
-	clusterName    string
-	clusterVersion string
-	credentials    string
-	machineType    string
-	nodeCount      int64
-	projectID      string
-	zone           string
-	cluster        *container.Cluster
+	Srv            *container.Service
+	Properties     map[string]string
 }
 
 // NewGKECluster creates a new GKECluster with the given properties
 func NewGKECluster(properties map[string]string) (*GKECluster, error) {
-	defaults := map[string]string{
-		"cluster_name":    "peer-pods",
-		"cluster_version": "1.27.11-gke.1062004",
-		"machine_type":    "n1-standard-1",
-		"node_count":      "2",
-		"zone":            "us-central1-a",
-	}
-
-	for key, value := range properties {
-		defaults[key] = value
-	}
-
-	requiredFields := []string{"project_id", "credentials"}
-	for _, field := range requiredFields {
-		if _, ok := defaults[field]; !ok {
-			return nil, fmt.Errorf("%s is required", field)
-		}
-	}
-
-	nodeCount, err := strconv.ParseInt(defaults["node_count"], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid node_count: %v", err)
-	}
-
-	return &GKECluster{
-		clusterName:    defaults["cluster_name"],
-		clusterVersion: defaults["cluster_version"],
-		credentials:    defaults["credentials"],
-		machineType:    defaults["machine_type"],
-		nodeCount:      nodeCount,
-		projectID:      defaults["project_id"],
-		zone:           defaults["zone"],
-		cluster:        nil,
-	}, nil
-}
-
-// CreateCluster creates the GKE cluster
-func (g *GKECluster) CreateCluster(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, time.Hour)
-	defer cancel()
-
 	srv, err := container.NewService(
-		ctx, option.WithCredentialsFile(g.credentials),
+	    context.Background(),
+	    option.WithCredentialsFile(properties["credentialsPath"]),
 	)
 	if err != nil {
-		return fmt.Errorf("GKE: container.NewService: %v", err)
+	    return nil, fmt.Errorf("failed to create GKE service: %w", err)
 	}
+
+    	return &GKECluster{
+    	    Srv:        srv,
+    	    Properties: properties,
+    	}, nil
+}
+
+// Create creates the GKE cluster
+func (g *GKECluster) Create(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, time.Hour)
+	defer cancel()
 
 	cluster := &container.Cluster{
 		Name:             g.clusterName,
@@ -97,7 +62,7 @@ func (g *GKECluster) CreateCluster(ctx context.Context) error {
 		Cluster: cluster,
 	}
 
-	op, err := srv.Projects.Zones.Clusters.Create(
+	op, err := g.Client.Projects.Zones.Clusters.Create(
 		g.projectID, g.zone, req,
 	).Context(ctx).Do()
 	if err != nil {
@@ -106,7 +71,7 @@ func (g *GKECluster) CreateCluster(ctx context.Context) error {
 
 	log.Infof("GKE: Cluster creation operation: %v\n", op.Name)
 
-	g.cluster, err = g.WaitForClusterActive(ctx, 30*time.Minute)
+	_, err = g.WaitForActive(ctx, 30*time.Minute)
 	if err != nil {
 		return fmt.Errorf("GKE: Error waiting for cluster to become active: %v", err)
 	}
@@ -118,19 +83,12 @@ func (g *GKECluster) CreateCluster(ctx context.Context) error {
 	return nil
 }
 
-// DeleteCluster deletes the GKE cluster
-func (g *GKECluster) DeleteCluster(ctx context.Context) error {
+// Delete deletes the GKE cluster
+func (g *GKECluster) Delete(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, time.Hour)
 	defer cancel()
 
-	srv, err := container.NewService(
-		ctx, option.WithCredentialsFile(g.credentials),
-	)
-	if err != nil {
-		return fmt.Errorf("GKE: container.NewService: %v", err)
-	}
-
-	op, err := srv.Projects.Zones.Clusters.Delete(
+	op, err := g.Client.Projects.Zones.Clusters.Delete(
 		g.projectID, g.zone, g.clusterName,
 	).Context(ctx).Do()
 	if err != nil {
@@ -141,23 +99,17 @@ func (g *GKECluster) DeleteCluster(ctx context.Context) error {
 
 	// Wait for the cluster to be deleted
 	activationTimeout := 30 * time.Minute
-	err = g.WaitForClusterDeleted(ctx, activationTimeout)
+	err = g.WaitForDeleted(ctx, activationTimeout)
 	if err != nil {
 		return fmt.Errorf("GKE: error waiting for cluster to be deleted: %v", err)
 	}
 	return nil
 }
 
-// WaitForClusterActive waits until the GKE cluster is active
-func (g *GKECluster) WaitForClusterActive(
+// WaitForActive waits until the GKE cluster is active
+func (g *GKECluster) WaitForActive(
 	ctx context.Context, activationTimeout time.Duration,
 ) (*container.Cluster, error) {
-	srv, err := container.NewService(
-		ctx, option.WithCredentialsFile(g.credentials),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("GKE: container.NewService: %v", err)
-	}
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, activationTimeout)
 	defer cancel()
@@ -170,7 +122,7 @@ func (g *GKECluster) WaitForClusterActive(
 		case <-timeoutCtx.Done():
 			return nil, fmt.Errorf("GKE: Reached timeout waiting for cluster.")
 		case <-ticker.C:
-			cluster, err := srv.Projects.Zones.Clusters.Get(g.projectID, g.zone, g.clusterName).Context(ctx).Do()
+			cluster, err := g.Client.Projects.Zones.Clusters.Get(g.projectID, g.zone, g.clusterName).Context(ctx).Do()
 			if err != nil {
 				return nil, fmt.Errorf("GKE: Projects.Zones.Clusters.Get: %v", err)
 			}
@@ -185,17 +137,10 @@ func (g *GKECluster) WaitForClusterActive(
 	}
 }
 
-// WaitForClusterDeleted waits until the GKE cluster is deleted
-func (g *GKECluster) WaitForClusterDeleted(
+// WaitForDeleted waits until the GKE cluster is deleted
+func (g *GKECluster) WaitForDeleted(
 	ctx context.Context, activationTimeout time.Duration,
 ) error {
-	srv, err := container.NewService(
-		ctx, option.WithCredentialsFile(g.credentials),
-	)
-	if err != nil {
-		return fmt.Errorf("GKE: container.NewService: %v", err)
-	}
-
 	timeoutCtx, cancel := context.WithTimeout(ctx, activationTimeout)
 	defer cancel()
 
@@ -207,7 +152,7 @@ func (g *GKECluster) WaitForClusterDeleted(
 		case <-timeoutCtx.Done():
 			return fmt.Errorf("GKE: timeout waiting for cluster deletion")
 		case <-ticker.C:
-			_, err := srv.Projects.Zones.Clusters.Get(g.projectID, g.zone, g.clusterName).Context(ctx).Do()
+			_, err := g.Client.Projects.Zones.Clusters.Get(g.projectID, g.zone, g.clusterName).Context(ctx).Do()
 			if err != nil {
 				if gerr, ok := err.(*googleapi.Error); ok && gerr.Code == 404 {
 					log.Info("GKE: Cluster deleted successfully")
@@ -269,10 +214,6 @@ func (g *GKECluster) GetKubeconfigFile(ctx context.Context) (string, error) {
 
 	if err != nil {
 		return "", fmt.Errorf("Failed to get cluster credentials: %v\nOutput: %s", err, output)
-	}
-
-	if g.cluster == nil {
-		return "", fmt.Errorf("Cluster not found. Call CreateCluster() first.")
 	}
 
 	kubeconfigPath := kconf.ResolveKubeConfigFile()

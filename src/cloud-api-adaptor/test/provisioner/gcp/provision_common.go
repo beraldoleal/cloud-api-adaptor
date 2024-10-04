@@ -21,30 +21,23 @@ type GCPProvisioner struct {
 	GkeCluster   *GKECluster
 	GcpVPC       *GCPVPC
 	PodvmImage   *GCPImage
-	CaaImageName string
 }
 
 // NewGCPProvisioner creates a new GCPProvisioner with the given properties.
 func NewGCPProvisioner(properties map[string]string) (pv.CloudProvisioner, error) {
-	ctx := context.Background()
+	credentials_path = properties['credentials_path']
 
-	srv, err := compute.NewService(
-		ctx, option.WithCredentialsFile(properties["credentials"]))
-	if err != nil {
-		return nil, fmt.Errorf("GCP: compute.NewService: %v", err)
-	}
-
-	gkeCluster, err := NewGKECluster(properties)
+	gkeCluster, err := NewGKECluster(credentials_path)
 	if err != nil {
 		return nil, err
 	}
 
-	gcpVPC, err := NewGCPVPC(properties)
+	gcpVPC, err := NewGCPVPC(credentials_path, properties['vpc_name'])
 	if err != nil {
 		return nil, err
 	}
 
-	image, err := NewGCPImage(srv, properties["podvm_image_name"])
+	gcpImage, err := NewGCPImage(credentials_path)
 	if err != nil {
 		return nil, err
 	}
@@ -52,15 +45,14 @@ func NewGCPProvisioner(properties map[string]string) (pv.CloudProvisioner, error
 	GCPProps = &GCPProvisioner{
 		GkeCluster:   gkeCluster,
 		GcpVPC:       gcpVPC,
-		PodvmImage:   image,
-		CaaImageName: properties["caa_image_name"],
+		PodvmImage:   gcpImage,
 	}
 	return GCPProps, nil
 }
 
 // CreateCluster creates a new GKE cluster.
 func (p *GCPProvisioner) CreateCluster(ctx context.Context, cfg *envconf.Config) error {
-	err := p.GkeCluster.CreateCluster(ctx)
+	err := p.GkeCluster.Create(ctx)
 	if err != nil {
 		return err
 	}
@@ -76,17 +68,17 @@ func (p *GCPProvisioner) CreateCluster(ctx context.Context, cfg *envconf.Config)
 
 // CreateVPC creates a new VPC in Google Cloud.
 func (p *GCPProvisioner) CreateVPC(ctx context.Context, cfg *envconf.Config) error {
-	return p.GcpVPC.CreateVPC(ctx, cfg)
+	return p.GcpVPC.Create(ctx, cfg)
 }
 
 // DeleteCluster deletes the GKE cluster.
 func (p *GCPProvisioner) DeleteCluster(ctx context.Context, cfg *envconf.Config) error {
-	return p.GkeCluster.DeleteCluster(ctx)
+	return p.GkeCluster.Delete(ctx)
 }
 
 // DeleteVPC deletes the VPC in Google Cloud.
 func (p *GCPProvisioner) DeleteVPC(ctx context.Context, cfg *envconf.Config) error {
-	return p.GcpVPC.DeleteVPC(ctx, cfg)
+	return p.GcpVPC.Delete(ctx, cfg)
 }
 
 func (p *GCPProvisioner) GetProperties(ctx context.Context, cfg *envconf.Config) map[string]string {
@@ -96,10 +88,10 @@ func (p *GCPProvisioner) GetProperties(ctx context.Context, cfg *envconf.Config)
 		"project_id":       p.GkeCluster.projectID,
 		"zone":             p.GkeCluster.zone,
 		"network":          p.GcpVPC.vpcName,
-		"caa_image_name":   p.CaaImageName,
 	}
 }
 
 func (p *GCPProvisioner) UploadPodvm(imagePath string, ctx context.Context, cfg *envconf.Config) error {
+	// To be Implemented
 	return nil
 }

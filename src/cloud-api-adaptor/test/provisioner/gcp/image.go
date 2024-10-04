@@ -8,15 +8,16 @@ import (
 )
 
 type GCPImage struct {
-	Service     *compute.Service
-	Description string
-	Name        string
+	Client *compute.Service
 }
 
-func NewGCPImage(srv *compute.Service, name string) (*GCPImage, error) {
+func NewGCPImage(credentialsPath string) *GCPImage {
+	client, err := compute.NewService(context.TODO(), option.WithCredentialsFile(credentialsPath))
+	if err != nil {
+		return nil, fmt.Errorf("GKE: failed to create GCP compute service: %v", err)
+	}
+
 	return &GCPImage{
-		Service:     srv,
-		Description: "Peer Pod VM image",
-		Name:        name,
-	}, nil
+		Client: client,
+	}
 }
