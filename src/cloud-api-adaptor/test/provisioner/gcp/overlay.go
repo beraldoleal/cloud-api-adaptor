@@ -8,6 +8,7 @@ import (
 	pv "github.com/confidential-containers/cloud-api-adaptor/src/cloud-api-adaptor/test/provisioner"
 	log "github.com/sirupsen/logrus"
 	"path/filepath"
+	"fmt"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 )
 
@@ -35,12 +36,10 @@ func (a *GCPInstallOverlay) Delete(ctx context.Context, cfg *envconf.Config) err
 }
 
 func (a *GCPInstallOverlay) Edit(ctx context.Context, cfg *envconf.Config, properties map[string]string) error {
-	var err error
-
-	image := properties["caa_image_name"]
+	image := properties["caaImageName"]
 	log.Infof("Updating caa image with %s", image)
 	if image != "" {
-		err = a.Overlay.SetKustomizeImage("cloud-api-adaptor", "newName", image)
+		err := a.Overlay.SetKustomizeImage("cloud-api-adaptor", "newName", image)
 		if err != nil {
 			return err
 		}
@@ -48,39 +47,51 @@ func (a *GCPInstallOverlay) Edit(ctx context.Context, cfg *envconf.Config, prope
 
 	// Mapping the internal properties to ConfigMapGenerator properties.
 	mapProps := map[string]string{
-		"pause_image":      "PAUSE_IMAGE",
-		"podvm_image_name": "PODVM_IMAGE_NAME",
-		"machine_type":     "GCP_MACHINE_TYPE",
-		"project_id":       "GCP_PROJECT_ID",
-		"zone":             "GCP_ZONE",
-		"network":          "GCP_NETWORK",
-		"vxlan_port":       "VXLAN_PORT",
+		// GCP
+		"gcpProjectID":       "GCP_PROJECT_ID",
+		"gcpZone":            "GCP_ZONE",
+
+		// GKE Cluster
+		"clusterMachineType": "GCP_MACHINE_TYPE",
+
+		// Image
+		"imageName":          "PODVM_IMAGE_NAME",
+
+		// VPC
+		"vpcName":            "GCP_NETWORK",
+
+		// TODO:
+		// "pause_image":      "PAUSE_IMAGE",
+		// "vxlan_port":       "VXLAN_PORT",
 	}
 
 	for k, v := range mapProps {
-		if properties[k] != "" {
-			if err = a.Overlay.SetKustomizeConfigMapGeneratorLiteral("peer-pods-cm",
-				v, properties[k]); err != nil {
-				return err
-			}
+		newValue := properties[k]
+		if newValue == "" {
+			continue
+		}
+
+		// Network name is a special case
+		if k == "vpcName" {
+		    newValue = fmt.Sprintf("global/networks/%s", properties[k])
+		}
+
+		if err := a.Overlay.SetKustomizeConfigMapGeneratorLiteral("peer-pods-cm", v, newValue); err != nil {
+		    return err
 		}
 	}
 
-	// Mapping the internal properties to SecretGenerator properties.
-	mapProps = map[string]string{
-		"credentials": "GCP_CREDENTIALS",
-	}
-	for k, _ := range mapProps {
-		if properties[k] != "" {
-			log.Info(properties[k])
-			if err = a.Overlay.SetKustomizeSecretGeneratorFile("peer-pods-secret",
-				properties[k]); err != nil {
-				return err
-			}
+	// Setting custom credentials file
+	credentialsPath := properties["gcpCredentialsPath"]
+	if credentialsPath != "" {
+		credentialsFileName := filepath.Base(credentialsPath)
+		if err := a.Overlay.SetKustomizeSecretGeneratorFile("peer-pods-secret",
+			credentialsFileName); err != nil {
+			return err
 		}
 	}
 
-	if err = a.Overlay.YamlReload(); err != nil {
+	if err := a.Overlay.YamlReload(); err != nil {
 		return err
 	}
 

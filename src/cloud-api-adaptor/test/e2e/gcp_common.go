@@ -5,6 +5,7 @@ package e2e
 
 import (
 	"testing"
+	"strings"
 	"time"
 
 	pv "github.com/confidential-containers/cloud-api-adaptor/src/cloud-api-adaptor/test/provisioner/gcp"
@@ -29,7 +30,10 @@ func (aa GCPAssert) HasPodVM(t *testing.T, id string) {
     podvmPrefix := "podvm-" + id
 
     // Create a request to list instances in the specified project and zone.
-    req := aa.ComputeService.Instances.List(aa.ProjectID, aa.Zone)
+    req := aa.Vpc.Srv.Instances.List(
+			aa.Vpc.Properties["gcpProjectID"],
+			aa.Vpc.Properties["gcpZone"],
+		)
     instances, err := req.Do()
     if err != nil {
         t.Errorf("Failed to list instances: %v", err)
@@ -38,11 +42,9 @@ func (aa GCPAssert) HasPodVM(t *testing.T, id string) {
 
     found := false
     for _, instance := range instances.Items {
-        if instance.Status != "TERMINATED" {
-            if strings.HasPrefix(instance.Name, podvmPrefix) {
-                found = true
-                break
-            }
+        if instance.Status != "TERMINATED" && strings.HasPrefix(instance.Name, podvmPrefix) {
+            found = true
+            break
         }
     }
 

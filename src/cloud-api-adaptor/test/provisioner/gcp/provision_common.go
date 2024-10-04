@@ -5,33 +5,31 @@ package gcp
 
 import (
 	"context"
-	"fmt"
-	"google.golang.org/api/option"
-
+	"errors"
 	pv "github.com/confidential-containers/cloud-api-adaptor/src/cloud-api-adaptor/test/provisioner"
-	// log "github.com/sirupsen/logrus"
-	"google.golang.org/api/compute/v1"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 )
 
 var GCPProps = &GCPProvisioner{}
 
+// MandatoryProperties holds the required GCP fields
+var mandatoryProperties = []string{
+	"gcpProjectID",
+	"gcpCredentialsPath",
+}
+
 // GCPProvisioner implements the CloudProvisioner interface.
 type GCPProvisioner struct {
+	Properties   map[string]string
 	GkeCluster   *GKECluster
 	GcpVPC       *GCPVPC
 	PodvmImage   *GCPImage
-	CaaImageName string
 }
 
 // NewGCPProvisioner creates a new GCPProvisioner with the given properties.
 func NewGCPProvisioner(properties map[string]string) (pv.CloudProvisioner, error) {
-	ctx := context.Background()
-
-	srv, err := compute.NewService(
-		ctx, option.WithCredentialsFile(properties["credentials"]))
-	if err != nil {
-		return nil, fmt.Errorf("GCP: compute.NewService: %v", err)
+	if err := ValidateProperties(properties); err != nil {
+		return nil, err
 	}
 
 	gkeCluster, err := NewGKECluster(properties)
@@ -44,23 +42,23 @@ func NewGCPProvisioner(properties map[string]string) (pv.CloudProvisioner, error
 		return nil, err
 	}
 
-	image, err := NewGCPImage(srv, properties["podvm_image_name"])
+	gcpImage, err := NewGCPImage(properties)
 	if err != nil {
 		return nil, err
 	}
 
 	GCPProps = &GCPProvisioner{
+		Properties:   properties,
 		GkeCluster:   gkeCluster,
 		GcpVPC:       gcpVPC,
-		PodvmImage:   image,
-		CaaImageName: properties["caa_image_name"],
+		PodvmImage:   gcpImage,
 	}
 	return GCPProps, nil
 }
 
 // CreateCluster creates a new GKE cluster.
 func (p *GCPProvisioner) CreateCluster(ctx context.Context, cfg *envconf.Config) error {
-	err := p.GkeCluster.CreateCluster(ctx)
+	err := p.GkeCluster.Create(ctx)
 	if err != nil {
 		return err
 	}
@@ -76,30 +74,35 @@ func (p *GCPProvisioner) CreateCluster(ctx context.Context, cfg *envconf.Config)
 
 // CreateVPC creates a new VPC in Google Cloud.
 func (p *GCPProvisioner) CreateVPC(ctx context.Context, cfg *envconf.Config) error {
-	return p.GcpVPC.CreateVPC(ctx, cfg)
+	return p.GcpVPC.Create(ctx)
 }
 
 // DeleteCluster deletes the GKE cluster.
 func (p *GCPProvisioner) DeleteCluster(ctx context.Context, cfg *envconf.Config) error {
-	return p.GkeCluster.DeleteCluster(ctx)
+	return p.GkeCluster.Delete(ctx)
 }
 
 // DeleteVPC deletes the VPC in Google Cloud.
 func (p *GCPProvisioner) DeleteVPC(ctx context.Context, cfg *envconf.Config) error {
-	return p.GcpVPC.DeleteVPC(ctx, cfg)
+	return p.GcpVPC.Delete(ctx)
 }
 
 func (p *GCPProvisioner) GetProperties(ctx context.Context, cfg *envconf.Config) map[string]string {
-	return map[string]string{
-		"podvm_image_name": p.PodvmImage.Name,
-		"machine_type":     p.GkeCluster.machineType,
-		"project_id":       p.GkeCluster.projectID,
-		"zone":             p.GkeCluster.zone,
-		"network":          p.GcpVPC.vpcName,
-		"caa_image_name":   p.CaaImageName,
-	}
+	return p.Properties
 }
 
 func (p *GCPProvisioner) UploadPodvm(imagePath string, ctx context.Context, cfg *envconf.Config) error {
+	// To be Implemented
+	return nil
+}
+
+// ValidateProperties will catch any missing mandatory property.
+func ValidateProperties(properties map[string]string) error {
+	for _, property := range mandatoryProperties {
+		if _, ok := properties[property]; !ok {
+			return errors.New("GCP: Missing mandatory property: " + property)
+		}
+	}
+
 	return nil
 }
