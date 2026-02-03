@@ -399,7 +399,9 @@ func NewLibvirtInstallChart(installDir, provider string) (pv.InstallChart, error
 // its scope for now. We need to create it manually while our Helm template
 // doesn't have a mechanism to properly inject secrets (respecting the backend types).
 func (l *LibvirtInstallChart) createSSHKeySecret(ctx context.Context, cfg *envconf.Config) error {
+	log.Infof("createSSHKeySecret called with sshKeyFile=%s", l.sshKeyFile)
 	if l.sshKeyFile == "" {
+		log.Info("sshKeyFile is empty, skipping secret creation")
 		return nil
 	}
 
@@ -436,6 +438,7 @@ func (l *LibvirtInstallChart) Uninstall(ctx context.Context, cfg *envconf.Config
 }
 
 func (l *LibvirtInstallChart) Configure(ctx context.Context, cfg *envconf.Config, properties map[string]string) error {
+	log.Infof("LibvirtInstallChart.Configure: Properties: %+v", properties)
 	if properties["CAA_IMAGE"] != "" {
 		img := strings.Split(properties["CAA_IMAGE"], ":")
 		imageNameProp := "image.name"
