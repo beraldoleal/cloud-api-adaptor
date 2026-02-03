@@ -47,7 +47,8 @@ type LibvirtInstallOverlay struct {
 }
 
 type LibvirtInstallChart struct {
-	Helm *pv.Helm
+	Helm       *pv.Helm
+	sshKeyFile string
 }
 
 func NewLibvirtProvisioner(properties map[string]string) (pv.CloudProvisioner, error) {
@@ -393,7 +394,40 @@ func NewLibvirtInstallChart(installDir, provider string) (pv.InstallChart, error
 	}, nil
 }
 
+// createSSHKeySecret creates the ssh-key-secret for libvirt.
+// NOTE: Helm deals with secret properties, but this particular one is outside
+// its scope for now. We need to create it manually while our Helm template
+// doesn't have a mechanism to properly inject secrets (respecting the backend types).
+func (l *LibvirtInstallChart) createSSHKeySecret(ctx context.Context, cfg *envconf.Config) error {
+	if l.sshKeyFile == "" {
+		return nil
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+	sshKeyPath := filepath.Join(homeDir, ".ssh", l.sshKeyFile)
+
+	args := []string{
+		"create", "secret", "generic", "ssh-key-secret",
+		"--from-file=id_rsa=" + sshKeyPath,
+		"-n", l.Helm.Namespace,
+		"--kubeconfig", cfg.KubeconfigFile(),
+	}
+	cmd := exec.Command("kubectl", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to create ssh-key-secret: %w, output: %s", err, string(output))
+	}
+	log.Infof("Created ssh-key-secret from %s", sshKeyPath)
+	return nil
+}
+
 func (l *LibvirtInstallChart) Install(ctx context.Context, cfg *envconf.Config) error {
+	if err := l.createSSHKeySecret(ctx, cfg); err != nil {
+		return err
+	}
 	return l.Helm.Install(ctx, cfg)
 }
 
@@ -436,9 +470,10 @@ func (l *LibvirtInstallChart) Configure(ctx context.Context, cfg *envconf.Config
 		}
 	}
 
-	if properties["libvirt_ssh_key_file"] != "" {
+	if properties["ssh_key_file"] != "" {
+		l.sshKeyFile = properties["ssh_key_file"]
 		l.Helm.OverrideValues["secrets.mode"] = "reference"
-		l.Helm.OverrideValues["secrets.existingSshKeySecretName"] = properties["libvirt_ssh_key_file"]
+		l.Helm.OverrideValues["secrets.existingSshKeySecretName"] = "ssh-key-secret"
 	}
 	return nil
 }
