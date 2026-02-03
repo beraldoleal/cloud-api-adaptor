@@ -411,6 +411,28 @@ func (l *LibvirtInstallChart) createSSHKeySecret(ctx context.Context, cfg *envco
 	}
 	sshKeyPath := filepath.Join(homeDir, ".ssh", l.sshKeyFile)
 
+	// Create namespace first if it doesn't exist
+	nsArgs := []string{
+		"create", "namespace", l.Helm.Namespace,
+		"--dry-run=client", "-o", "yaml",
+		"--kubeconfig", cfg.KubeconfigFile(),
+	}
+	nsCmd := exec.Command("kubectl", nsArgs...)
+	nsOutput, err := nsCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to generate namespace yaml: %w, output: %s", err, string(nsOutput))
+	}
+
+	applyArgs := []string{"apply", "-f", "-", "--kubeconfig", cfg.KubeconfigFile()}
+	applyCmd := exec.Command("kubectl", applyArgs...)
+	applyCmd.Stdin = strings.NewReader(string(nsOutput))
+	applyOutput, err := applyCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to create namespace: %w, output: %s", err, string(applyOutput))
+	}
+	log.Infof("Created namespace %s", l.Helm.Namespace)
+
+	// Now create the secret
 	args := []string{
 		"create", "secret", "generic", "ssh-key-secret",
 		"--from-file=id_rsa=" + sshKeyPath,
